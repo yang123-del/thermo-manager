@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>温箱资源预约管理系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="ambient-glow ambient-cold"></div>
+    <div class="ambient-glow ambient-warm"></div>
+
+    <div class="app-wrapper">
+        <!-- 侧边栏：温箱选择 + 统计 -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">🌡</div>
+                <div class="brand-text">
+                    <div class="brand-title">THERMO<span class="brand-accent">BOX</span></div>
+                    <div class="brand-sub">温箱资源管理系统</div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-label">选择温箱</div>
+                <nav class="chamber-nav">
+                    <button class="chamber-btn active" data-sheet="chamber-small">
+                        <div class="chamber-btn-glow"></div>
+                        <span class="chamber-btn-icon">🧊</span>
+                        <div class="chamber-btn-info">
+                            <div class="chamber-btn-name">西厂房小温箱</div>
+                            <div class="chamber-btn-meta">3U 空间</div>
+                        </div>
+                        <div class="chamber-btn-indicator"></div>
+                    </button>
+                    <button class="chamber-btn" data-sheet="chamber-large">
+                        <div class="chamber-btn-glow"></div>
+                        <span class="chamber-btn-icon">🏭</span>
+                        <div class="chamber-btn-info">
+                            <div class="chamber-btn-name">大温箱</div>
+                            <div class="chamber-btn-meta">3U 空间</div>
+                        </div>
+                        <div class="chamber-btn-indicator"></div>
+                    </button>
+                    <button class="chamber-btn" data-sheet="chamber-east">
+                        <div class="chamber-btn-glow"></div>
+                        <span class="chamber-btn-icon">🏢</span>
+                        <div class="chamber-btn-info">
+                            <div class="chamber-btn-name">东厂房小温箱</div>
+                            <div class="chamber-btn-meta">3U 空间</div>
+                        </div>
+                        <div class="chamber-btn-indicator"></div>
+                    </button>
+                </nav>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-label">本月概览</div>
+                <div class="stat-cards">
+                    <div class="stat-card">
+                        <div class="stat-card-value" id="stat-month-count">0</div>
+                        <div class="stat-card-label">预约总数</div>
+                        <div class="stat-card-bar"><div class="stat-card-fill" style="width:0%"></div></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-value" id="stat-today-count">0</div>
+                        <div class="stat-card-label">今日占用</div>
+                        <div class="stat-card-bar"><div class="stat-card-fill" style="width:0%"></div></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-value success" id="stat-shared-count">0</div>
+                        <div class="stat-card-label">共享次数</div>
+                        <div class="stat-card-bar"><div class="stat-card-fill success" style="width:0%"></div></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card-value danger" id="stat-high-risk">0</div>
+                        <div class="stat-card-label">高风险</div>
+                        <div class="stat-card-bar"><div class="stat-card-fill danger" style="width:0%"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 温度色谱图例 -->
+            <div class="sidebar-section">
+                <div class="section-label">温度色谱</div>
+                <div class="thermal-legend">
+                    <div class="thermal-gradient-bar"></div>
+                    <div class="thermal-labels">
+                        <span>-40°C</span>
+                        <span>0°C</span>
+                        <span>+40°C</span>
+                        <span>+70°C</span>
+                        <span>+85°C</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="role-info" id="role-info">
+                    <span class="role-badge" id="role-badge">👤 普通用户</span>
+                    <button class="role-switch" id="btn-role-switch">切换身份</button>
+                </div>
+                <button class="btn-export" id="btn-export">
+                    <span>📊</span> 导出汇总
+                </button>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-area">
+            <!-- 顶部提示栏 -->
+            <div class="thermal-warning-bar">
+                <div class="thermal-warning-track">
+                    <span class="thermal-warning-icon">⚡</span>
+                    <span class="thermal-warning-text">
+                        温箱低于 <strong class="cold-text">-30°C</strong> 或高于 <strong class="hot-text">70°C</strong> 使用时有风险，
+                        请先咨询 <strong>周杨</strong> 后再提交！温箱共 <strong>3U</strong> 空间，温度兼容时可共享。
+                    </span>
+                </div>
+            </div>
+
+            <!-- 日历头部 -->
+            <div class="calendar-toolbar">
+                <div class="calendar-nav">
+                    <button class="nav-btn" id="btn-prev-month">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                    <div class="calendar-month" id="calendar-title">
+                        <span class="month-year">2026</span>
+                        <span class="month-num">06</span>
+                    </div>
+                    <button class="nav-btn" id="btn-next-month">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                </div>
+                <button class="nav-btn nav-today" id="btn-today">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    今天
+                </button>
+            </div>
+
+            <!-- 星期标题 -->
+            <div class="calendar-weekdays">
+                <div class="weekday-cell">SUN</div>
+                <div class="weekday-cell">MON</div>
+                <div class="weekday-cell">TUE</div>
+                <div class="weekday-cell">WED</div>
+                <div class="weekday-cell">THU</div>
+                <div class="weekday-cell">FRI</div>
+                <div class="weekday-cell">SAT</div>
+            </div>
+
+            <!-- 日历网格 -->
+            <div class="calendar-grid" id="calendar-grid"></div>
+        </main>
+    </div>
+
+    <!-- ========== 新建/编辑预约弹窗 ========== -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">新增预约</h2>
+                <button class="modal-close" id="modal-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="booking-form">
+                    <input type="hidden" id="booking-id">
+                    <div class="form-row">
+                        <label class="form-label">选择温箱</label>
+                        <select class="form-input" id="form-chamber">
+                            <option value="chamber-small">西厂房小温箱</option>
+                            <option value="chamber-large">大温箱</option>
+                            <option value="chamber-east">东厂房小温箱</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">预约人 <span class="required">*</span></label>
+                        <input type="text" class="form-input" id="form-user" placeholder="请输入姓名" required>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">测试内容 <span class="required">*</span></label>
+                        <input type="text" class="form-input" id="form-content" placeholder="在什么温度下测试什么内容" required>
+                    </div>
+                    <div class="form-row form-row-2col">
+                        <div>
+                            <label class="form-label">开始日期 <span class="required">*</span></label>
+                            <input type="date" class="form-input" id="form-start-date" required>
+                        </div>
+                        <div>
+                            <label class="form-label">结束日期 <span class="required">*</span></label>
+                            <input type="date" class="form-input" id="form-end-date" required>
+                        </div>
+                    </div>
+                    <div class="form-row form-row-2col">
+                        <div>
+                            <label class="form-label">最低温度 (°C)</label>
+                            <input type="number" class="form-input" id="form-temp-min" placeholder="-40">
+                        </div>
+                        <div>
+                            <label class="form-label">最高温度 (°C)</label>
+                            <input type="number" class="form-input" id="form-temp-max" placeholder="85">
+                        </div>
+                    </div>
+                    <!-- 温度实时预览条 -->
+                    <div class="form-row">
+                        <div class="temp-preview-bar" id="temp-preview-bar">
+                            <div class="temp-preview-fill" id="temp-preview-fill"></div>
+                            <div class="temp-preview-labels">
+                                <span>-40°</span><span>-20°</span><span>0°</span><span>20°</span><span>40°</span><span>60°</span><span>80°</span><span>100°</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">空间占用</label>
+                        <div class="space-selector" id="space-selector">
+                            <button type="button" class="space-option active" data-space="1">1U</button>
+                            <button type="button" class="space-option" data-space="2">2U</button>
+                            <button type="button" class="space-option" data-space="3">3U</button>
+                        </div>
+                        <input type="hidden" id="form-space" value="1">
+                    </div>
+                    <div class="form-hint" id="temp-hint"></div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" id="btn-cancel">取消</button>
+                        <button type="submit" class="btn btn-primary">确认预约</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 管理员认证弹窗 ========== -->
+    <div class="modal-overlay" id="auth-overlay">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h2>🔐 管理员认证</h2>
+                <button class="modal-close" id="auth-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <label class="form-label">请输入管理员密钥</label>
+                    <input type="password" class="form-input" id="auth-password" placeholder="请输入密钥以切换管理员身份" autocomplete="off">
+                </div>
+                <div class="form-hint" id="auth-hint"></div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" id="btn-auth-cancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="btn-auth-confirm">确认切换</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="delete-overlay">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h2>确认删除</h2>
+                <button class="modal-close" id="delete-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="delete-text">确定要删除这条预约记录吗？此操作不可撤销。</p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" id="btn-delete-cancel">取消</button>
+                    <button type="button" class="btn btn-danger" id="btn-delete-confirm">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 导出汇总弹窗 ========== -->
+    <div class="modal-overlay" id="export-overlay">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h2>📊 导出汇总</h2>
+                <button class="modal-close" id="export-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="export-form">
+                    <div class="form-row">
+                        <label class="form-label">导出范围</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="export-range" value="year" checked> 本年度
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="export-range" value="custom"> 自定义范围
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-row form-row-2col" id="custom-range-box" style="display:none;">
+                        <div>
+                            <label class="form-label">开始日期</label>
+                            <input type="date" class="form-input" id="export-start">
+                        </div>
+                        <div>
+                            <label class="form-label">结束日期</label>
+                            <input type="date" class="form-input" id="export-end">
+                        </div>
+                    </div>
+                    <div class="form-hint">将导出：预约明细 / 温箱统计 / 人员统计 / 月度统计</div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" id="btn-export-cancel">取消</button>
+                        <button type="submit" class="btn btn-primary">导出 Excel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 日期详情侧边抽屉 ========== -->
+    <div class="drawer-overlay" id="day-detail-overlay">
+        <div class="drawer" id="day-detail-drawer">
+            <div class="drawer-header">
+                <div class="drawer-date">
+                    <span class="drawer-weekday" id="day-detail-weekday">周三</span>
+                    <span class="drawer-daynum" id="day-detail-daynum">10</span>
+                    <span class="drawer-yearmonth" id="day-detail-yearmonth">2026.06</span>
+                </div>
+                <div class="drawer-meta">
+                    <span class="drawer-space" id="day-detail-space">占用 2/3U</span>
+                    <span class="drawer-status" id="day-detail-status">可共享</span>
+                </div>
+                <button class="drawer-close" id="day-detail-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="drawer-body">
+                <div class="drawer-section-title">预约详情</div>
+                <div class="drawer-bookings" id="day-bookings"></div>
+            </div>
+            <div class="drawer-footer">
+                <button class="btn btn-primary btn-full" id="btn-day-add">+ 新建预约</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
