@@ -657,11 +657,15 @@ function openDayDetail(date) {
       const deleteBtn = admin
         ? `<button class="drawer-booking-delete" data-id="${b.id}" title="删除">×</button>`
         : '';
+      const timeStr = (b.startTimeOfDay && b.endTimeOfDay)
+        ? `${b.startTimeOfDay} - ${b.endTimeOfDay}`
+        : '全天';
       item.innerHTML = `
         <div class="booking-color-bar" style="background:${colorBar};"></div>
         <div class="drawer-booking-info">
           <div class="drawer-booking-user">
             ${b.user}${isRisk ? '<span class="risk-badge">高风险</span>' : ''}
+            <span class="time-tag">⏰ ${timeStr}</span>
           </div>
           <div class="drawer-booking-content">${b.content || '未填写测试内容'}</div>
           <div class="drawer-booking-meta">
@@ -721,6 +725,8 @@ function openAddModal() {
   document.getElementById('form-content').value = '';
   document.getElementById('form-start-date').value = selectedDateStr || formatDate(TODAY);
   document.getElementById('form-end-date').value = selectedDateStr || formatDate(TODAY);
+  document.getElementById('form-start-time').value = '09:00';
+  document.getElementById('form-end-time').value = '18:00';
   document.getElementById('form-temp-min').value = '';
   document.getElementById('form-temp-max').value = '';
   setSpaceValue(1);
@@ -744,6 +750,8 @@ function openEditModal(id) {
   document.getElementById('form-content').value = b.content;
   document.getElementById('form-start-date').value = b.startDate;
   document.getElementById('form-end-date').value = b.endDate;
+  document.getElementById('form-start-time').value = b.startTimeOfDay || '00:00';
+  document.getElementById('form-end-time').value = b.endTimeOfDay || '23:45';
   document.getElementById('form-temp-min').value = b.tempMin !== null && b.tempMin !== undefined ? b.tempMin : '';
   document.getElementById('form-temp-max').value = b.tempMax !== null && b.tempMax !== undefined ? b.tempMax : '';
   setSpaceValue(b.space || 1);
@@ -818,6 +826,8 @@ async function handleFormSubmit(e) {
   const content = document.getElementById('form-content').value.trim();
   const startDate = document.getElementById('form-start-date').value;
   const endDate = document.getElementById('form-end-date').value;
+  const startTimeOfDay = document.getElementById('form-start-time').value;
+  const endTimeOfDay = document.getElementById('form-end-time').value;
   const tempMinRaw = document.getElementById('form-temp-min').value;
   const tempMaxRaw = document.getElementById('form-temp-max').value;
   const space = Number(document.getElementById('form-space').value) || 1;
@@ -835,7 +845,7 @@ async function handleFormSubmit(e) {
     alert('最低温度不能高于最高温度'); return;
   }
 
-  const payload = { chamber, user, content, startDate, endDate, tempMin, tempMax, space };
+  const payload = { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space };
 
   try {
     if (id) {

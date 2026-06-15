@@ -1,6 +1,7 @@
 /**
  * 温箱资源预约管理系统 - 后端服务
  * Express + SQLite (better-sqlite3) + CORS
+ * V3.0 - 支持小时级预约（15分钟精度）
  */
 
 const express = require('express');
@@ -13,26 +14,44 @@ const DB_PATH = path.join(__dirname, 'thermo.db');
 const ADMIN_PASSWORD = 'Yingjian123'; // 管理员密钥
 const PORT = process.env.PORT || 3000;
 const TOTAL_SPACE = 3;
+const TIME_STEP_MIN = 15; // 15分钟粒度
 
 // ===================== 数据库初始化 =====================
 const db = new Database(DB_PATH);
 db.exec(`
   CREATE TABLE IF NOT EXISTS bookings (
-    id          TEXT PRIMARY KEY,
-    chamber     TEXT NOT NULL,
-    user        TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    startDate   TEXT NOT NULL,
-    endDate     TEXT NOT NULL,
-    tempMin     INTEGER,
-    tempMax     INTEGER,
-    space       INTEGER DEFAULT 1,
-    createdAt   INTEGER DEFAULT (strftime('%s','now') * 1000)
+    id              TEXT PRIMARY KEY,
+    chamber         TEXT NOT NULL,
+    user            TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    startDate       TEXT NOT NULL,
+    endDate         TEXT NOT NULL,
+    startTimeOfDay  TEXT DEFAULT '00:00',
+    endTimeOfDay    TEXT DEFAULT '23:45',
+    tempMin         INTEGER,
+    tempMax         INTEGER,
+    space           INTEGER DEFAULT 1,
+    createdAt       INTEGER DEFAULT (strftime('%s','now') * 1000)
   );
   CREATE INDEX IF NOT EXISTS idx_chamber    ON bookings(chamber);
   CREATE INDEX IF NOT EXISTS idx_dates      ON bookings(startDate, endDate);
   CREATE INDEX IF NOT EXISTS idx_createdAt  ON bookings(createdAt);
 `);
+
+// 迁移：旧数据没有 startTimeOfDay / endTimeOfDay 字段时设为全天
+try {
+  const colCheck = db.prepare(`PRAGMA table_info(bookings)`).all();
+  const hasStartTime = colCheck.some(c => c.name === 'startTimeOfDay');
+  if (!hasStartTime) {
+    db.exec(`
+      ALTER TABLE bookings ADD COLUMN startTimeOfDay TEXT DEFAULT '00:00';
+      ALTER TABLE bookings ADD COLUMN endTimeOfDay   TEXT DEFAULT '23:45';
+    `);
+    console.log('[DB Migration] 已添加 startTimeOfDay / endTimeOfDay 字段');
+  }
+} catch (e) {
+  console.warn('[DB Migration] 字段可能已存在:', e.message);
+}
 
 // ===================== 工具函数 =====================
 function genId() {
@@ -56,18 +75,67 @@ function isTempCompatible(a, b) {
   return aMin <= bMax && aMax >= bMin;
 }
 
+function canCoexist(bookingList) {
+  if (!bookingList.length) return true;
+  const totalSpace = bookingList.reduce((s, b) => s + (Number(b.space) || 1), 0);
+  if (totalSpace > TOTAL_SPACE) return false;
+  for (let i = 0; i < bookingList.length; i++)
+    for (let j = i + 1; j < bookingList.length; j++)
+      if (!isTempCompatible(bookingList[i], bookingList[j])) return false;
+  return true;
+}
+
 /**
- * 检查新预约是否与已有预约冲突
- * @param {string} chamber
- * @param {string} startDate YYYY-MM-DD
- * @param {string} endDate   YYYY-MM-DD
- * @param {string|null} excludeId 编辑时排除自身
- * @param {number} newSpace
- * @param {number|null} newTempMin
- * @param {number|null} newTempMax
+ * 将 HH:mm 字符串转成从 00:00 开始的分钟数
+ */
+function timeToMinutes(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * 将分钟数转成 HH:mm 字符串
+ */
+function minutesToTime(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * 判断某个预约在指定时间点（日期+分钟数）是否活跃
+ */
+function isBookingActiveAt(booking, dateStr, minutesOfDay) {
+  // 日期不在范围内
+  if (dateStr < booking.startDate || dateStr > booking.endDate) return false;
+
+  const bStartMin = timeToMinutes(booking.startTimeOfDay || '00:00');
+  const bEndMin   = timeToMinutes(booking.endTimeOfDay   || '23:45');
+
+  // 同一天的情况
+  if (booking.startDate === booking.endDate) {
+    return minutesOfDay >= bStartMin && minutesOfDay <= bEndMin;
+  }
+
+  // 跨多天的情况
+  if (dateStr === booking.startDate) {
+    // 开始日：从 startTime 到 23:45 都活跃
+    return minutesOfDay >= bStartMin;
+  }
+  if (dateStr === booking.endDate) {
+    // 结束日：从 00:00 到 endTime 都活跃
+    return minutesOfDay <= bEndMin;
+  }
+  // 中间日期：全天活跃
+  return true;
+}
+
+/**
+ * 检查新预约是否与已有预约冲突（按15分钟粒度）
  * @returns {boolean} true = 有冲突
  */
-function checkConflict(chamber, startDate, endDate, excludeId, newSpace, newTempMin, newTempMax) {
+function checkConflict(chamber, startDate, endDate, startTimeOfDay, endTimeOfDay, excludeId, newSpace, newTempMin, newTempMax) {
+  // 1. 粗筛：日期区间有重叠的记录
   let sql = `
     SELECT * FROM bookings
     WHERE chamber = ? AND startDate <= ? AND endDate >= ?
@@ -79,23 +147,51 @@ function checkConflict(chamber, startDate, endDate, excludeId, newSpace, newTemp
   }
   const rows = db.prepare(sql).all(...params);
 
+  const newStartMin = timeToMinutes(startTimeOfDay || '00:00');
+  const newEndMin   = timeToMinutes(endTimeOfDay   || '23:45');
+
+  // 2. 遍历新预约覆盖的每一天
   const start = new Date(startDate + 'T12:00:00');
-  const end = new Date(endDate + 'T12:00:00');
+  const end   = new Date(endDate   + 'T12:00:00');
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const ds = formatDate(d);
-    const dayBks = rows.filter(b => ds >= b.startDate && ds <= b.endDate);
 
-    // 空间检查
-    const totalSpace = dayBks.reduce((s, b) => s + (Number(b.space) || 1), 0) + (Number(newSpace) || 1);
-    if (totalSpace > TOTAL_SPACE) return true;
+    // 确定这一天新预约活跃的时间范围（分钟数）
+    let dayStartMin, dayEndMin;
+    if (ds === startDate && ds === endDate) {
+      // 只有一天
+      dayStartMin = newStartMin;
+      dayEndMin   = newEndMin;
+    } else if (ds === startDate) {
+      // 开始日
+      dayStartMin = newStartMin;
+      dayEndMin   = 23 * 60 + 45;
+    } else if (ds === endDate) {
+      // 结束日
+      dayStartMin = 0;
+      dayEndMin   = newEndMin;
+    } else {
+      // 中间日
+      dayStartMin = 0;
+      dayEndMin   = 23 * 60 + 45;
+    }
 
-    // 温度兼容检查
-    const newStub = { tempMin: newTempMin, tempMax: newTempMax };
-    for (const b of dayBks) {
-      if (!isTempCompatible(b, newStub)) return true;
+    // 3. 对这一天内每个15分钟时间点检查空间和温度
+    for (let m = dayStartMin; m <= dayEndMin; m += TIME_STEP_MIN) {
+      // 找出在该时间点活跃的所有已有预约
+      const activeBks = rows.filter(b => isBookingActiveAt(b, ds, m));
+
+      // 空间检查：活跃预约 + 新预约的 space 之和
+      const totalSpace = activeBks.reduce((s, b) => s + (Number(b.space) || 1), 0) + (Number(newSpace) || 1);
+      if (totalSpace > TOTAL_SPACE) return true;
+
+      // 温度兼容检查
+      const newStub = { tempMin: newTempMin, tempMax: newTempMax, space: newSpace };
+      if (!canCoexist([...activeBks, newStub])) return true;
     }
   }
+
   return false;
 }
 
@@ -144,7 +240,7 @@ app.get('/api/bookings/:chamber', (req, res) => {
 // 新增预约
 app.post('/api/bookings', (req, res) => {
   try {
-    const { chamber, user, content, startDate, endDate, tempMin, tempMax, space = 1 } = req.body;
+    const { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space = 1 } = req.body;
 
     // 校验
     if (!chamber || !user || !content || !startDate || !endDate) {
@@ -153,6 +249,17 @@ app.post('/api/bookings', (req, res) => {
     if (startDate > endDate) {
       return res.status(400).json({ success: false, error: '结束日期不能早于开始日期' });
     }
+
+    // 时间默认值
+    const sTime = startTimeOfDay || '00:00';
+    const eTime = endTimeOfDay   || '23:45';
+
+    // 校验时间格式 HH:mm
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!timeRegex.test(sTime) || !timeRegex.test(eTime)) {
+      return res.status(400).json({ success: false, error: '时间格式必须为 HH:mm（24小时制）' });
+    }
+
     const spaceVal = Number(space) || 1;
     const tempMin2 = (tempMin !== undefined && tempMin !== '') ? Number(tempMin) : null;
     const tempMax2 = (tempMax !== undefined && tempMax !== '') ? Number(tempMax) : null;
@@ -160,8 +267,8 @@ app.post('/api/bookings', (req, res) => {
       return res.status(400).json({ success: false, error: '最低温度不能高于最高温度' });
     }
 
-    // 冲突检查
-    const conflict = checkConflict(chamber, startDate, endDate, null, spaceVal, tempMin2, tempMax2);
+    // 冲突检查（含时间粒度）
+    const conflict = checkConflict(chamber, startDate, endDate, sTime, eTime, null, spaceVal, tempMin2, tempMax2);
     if (conflict) {
       return res.status(409).json({ success: false, error: '该时间段温箱空间已满或温度不兼容，无法预约。' });
     }
@@ -170,12 +277,12 @@ app.post('/api/bookings', (req, res) => {
     const createdAt = Date.now();
 
     const insert = db.prepare(`
-      INSERT INTO bookings (id, chamber, user, content, startDate, endDate, tempMin, tempMax, space, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO bookings (id, chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    insert.run(id, chamber, user, content, startDate, endDate, tempMin2, tempMax2, spaceVal, createdAt);
+    insert.run(id, chamber, user, content, startDate, endDate, sTime, eTime, tempMin2, tempMax2, spaceVal, createdAt);
 
-    res.json({ success: true, data: { id, chamber, user, content, startDate, endDate, tempMin: tempMin2, tempMax: tempMax2, space: spaceVal, createdAt } });
+    res.json({ success: true, data: { id, chamber, user, content, startDate, endDate, startTimeOfDay: sTime, endTimeOfDay: eTime, tempMin: tempMin2, tempMax: tempMax2, space: spaceVal, createdAt } });
   } catch (e) {
     console.error('新增预约失败:', e);
     res.status(500).json({ success: false, error: '保存失败' });
@@ -186,7 +293,7 @@ app.post('/api/bookings', (req, res) => {
 app.put('/api/bookings/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { chamber, user, content, startDate, endDate, tempMin, tempMax, space = 1 } = req.body;
+    const { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space = 1 } = req.body;
 
     // 校验
     const exists = db.prepare('SELECT id FROM bookings WHERE id = ?').get(id);
@@ -198,6 +305,16 @@ app.put('/api/bookings/:id', (req, res) => {
     if (startDate > endDate) {
       return res.status(400).json({ success: false, error: '结束日期不能早于开始日期' });
     }
+
+    // 时间默认值
+    const sTime = startTimeOfDay || '00:00';
+    const eTime = endTimeOfDay   || '23:45';
+
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!timeRegex.test(sTime) || !timeRegex.test(eTime)) {
+      return res.status(400).json({ success: false, error: '时间格式必须为 HH:mm（24小时制）' });
+    }
+
     const spaceVal = Number(space) || 1;
     const tempMin2 = (tempMin !== undefined && tempMin !== '') ? Number(tempMin) : null;
     const tempMax2 = (tempMax !== undefined && tempMax !== '') ? Number(tempMax) : null;
@@ -206,17 +323,18 @@ app.put('/api/bookings/:id', (req, res) => {
     }
 
     // 冲突检查（排除自己）
-    const conflict = checkConflict(chamber, startDate, endDate, id, spaceVal, tempMin2, tempMax2);
+    const conflict = checkConflict(chamber, startDate, endDate, sTime, eTime, id, spaceVal, tempMin2, tempMax2);
     if (conflict) {
       return res.status(409).json({ success: false, error: '该时间段温箱空间已满或温度不兼容，无法修改。' });
     }
 
     const update = db.prepare(`
       UPDATE bookings
-      SET chamber = ?, user = ?, content = ?, startDate = ?, endDate = ?, tempMin = ?, tempMax = ?, space = ?
+      SET chamber = ?, user = ?, content = ?, startDate = ?, endDate = ?,
+          startTimeOfDay = ?, endTimeOfDay = ?, tempMin = ?, tempMax = ?, space = ?
       WHERE id = ?
     `);
-    update.run(chamber, user, content, startDate, endDate, tempMin2, tempMax2, spaceVal, id);
+    update.run(chamber, user, content, startDate, endDate, sTime, eTime, tempMin2, tempMax2, spaceVal, id);
 
     res.json({ success: true });
   } catch (e) {
