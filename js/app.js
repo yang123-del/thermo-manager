@@ -1,5 +1,5 @@
 /**
- * 温箱资源预约管理系统 - 热力色谱主题 V4
+ * 温箱资源预约管理系统 - 热力色谱主题 V4 + 后端同步版
  */
 
 // ===================== 常量与配置 =====================
@@ -9,7 +9,7 @@ const CHAMBERS = {
   'chamber-east':  { name: '东厂房小温箱', icon: '🏢' }
 };
 
-const STORAGE_KEY = 'thermo_bookings_v3';
+const API_BASE = ''; // 同域部署，无需前缀
 const TOTAL_SPACE = 3;
 const TODAY = normalizeDate(new Date());
 
@@ -155,26 +155,76 @@ function getMonthLabel(dateStr) {
   return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 }
 
-// ===================== 数据层 =====================
-function loadBookings() {
+// ===================== 数据层（API） =====================
+let bookings = [];
+
+async function loadBookings() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seedData();
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) return seedData();
-    data.forEach(b => { if (b.space === undefined) b.space = 1; });
-    return data;
-  } catch { return seedData(); }
+    const res = await fetch(API_BASE + '/api/bookings');
+    if (!res.ok) throw new Error('加载失败');
+    const json = await res.json();
+    bookings = json.success ? json.data : [];
+    return bookings;
+  } catch (e) {
+    console.error('加载预约数据失败:', e);
+    bookings = [];
+    return bookings;
+  }
 }
 
-function saveBookings(bookings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
+async function saveNewBooking(payload) {
+  const res = await fetch(API_BASE + '/api/bookings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '提交失败');
+  await loadBookings();
+  return json.data;
 }
 
-function seedData() {
-  const bookings = [
+async function updateBooking(id, payload) {
+  const res = await fetch(API_BASE + '/api/bookings/' + encodeURIComponent(id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '更新失败');
+  await loadBookings();
+}
+
+async function removeBooking(id, password) {
+  const res = await fetch(API_BASE + '/api/bookings/' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '删除失败');
+  await loadBookings();
+}
+
+async function syncIfEmpty() {
+  // 首次运行时如果后端为空，自动塞入演示数据方便体验
+  try {
+    const res = await fetch(API_BASE + '/api/bookings');
+    const json = await res.json();
+    if (json.success && json.count === 0) {
+      await migrateSeedData();
+    } else {
+      await loadBookings();
+    }
+  } catch (e) {
+    console.warn('后端连接失败，请检查服务器:', e);
+    bookings = [];
+  }
+}
+
+async function migrateSeedData() {
+  const seedData = [
     {
-      id: 'demo-1',
       chamber: 'chamber-small',
       user: '刘鑫明',
       content: '嵌入式涂胶SSD选型',
@@ -182,11 +232,9 @@ function seedData() {
       endDate: '2026-06-03',
       tempMin: 0,
       tempMax: 70,
-      space: 2,
-      createdAt: Date.now()
+      space: 2
     },
     {
-      id: 'demo-2',
       chamber: 'chamber-small',
       user: '刘凯',
       content: '轮对经济镜',
@@ -194,11 +242,9 @@ function seedData() {
       endDate: '2026-06-07',
       tempMin: 0,
       tempMax: 40,
-      space: 1,
-      createdAt: Date.now() - 10000
+      space: 1
     },
     {
-      id: 'demo-3',
       chamber: 'chamber-large',
       user: '周杨',
       content: '高低温循环测试 - 芯片老化',
@@ -206,11 +252,9 @@ function seedData() {
       endDate: '2026-06-06',
       tempMin: -40,
       tempMax: 85,
-      space: 3,
-      createdAt: Date.now() - 20000
+      space: 3
     },
     {
-      id: 'demo-4',
       chamber: 'chamber-east',
       user: '张伟',
       content: '传感器校准',
@@ -218,11 +262,9 @@ function seedData() {
       endDate: '2026-06-10',
       tempMin: -20,
       tempMax: 60,
-      space: 1,
-      createdAt: Date.now() - 30000
+      space: 1
     },
     {
-      id: 'demo-5',
       chamber: 'chamber-small',
       user: '李晓东',
       content: '电路板振动测试',
@@ -230,12 +272,12 @@ function seedData() {
       endDate: '2026-06-06',
       tempMin: 0,
       tempMax: 40,
-      space: 1,
-      createdAt: Date.now() - 40000
+      space: 1
     }
   ];
-  saveBookings(bookings);
-  return bookings;
+  for (const payload of seedData) {
+    try { await saveNewBooking(payload); } catch (e) { console.warn('演示数据导入跳过:', e.message); }
+  }
 }
 
 function genId() {
@@ -243,7 +285,6 @@ function genId() {
 }
 
 // ===================== 共享核心逻辑 =====================
-let bookings = loadBookings();
 let currentChamber = 'chamber-small';
 let currentMonth = getMonthStart(new Date());
 let deleteTargetId = null;
@@ -768,7 +809,7 @@ function updateTempHint() {
   }
 }
 
-function handleFormSubmit(e) {
+async function handleFormSubmit(e) {
   e.preventDefault();
 
   const id = document.getElementById('booking-id').value;
@@ -794,42 +835,40 @@ function handleFormSubmit(e) {
     alert('最低温度不能高于最高温度'); return;
   }
 
-  if (checkConflict(chamber, startDate, endDate, id || null, space, tempMin, tempMax)) {
-    alert('该时间段温箱空间已满或温度不兼容，无法预约。');
-    return;
-  }
+  const payload = { chamber, user, content, startDate, endDate, tempMin, tempMax, space };
 
-  if (id) {
-    const idx = bookings.findIndex(b => b.id === id);
-    if (idx !== -1) {
-      bookings[idx] = { ...bookings[idx], chamber, user, content, startDate, endDate, tempMin, tempMax, space, updatedAt: Date.now() };
+  try {
+    if (id) {
+      await updateBooking(id, payload);
+    } else {
+      await saveNewBooking(payload);
     }
-  } else {
-    bookings.push({
-      id: genId(), chamber, user, content, startDate, endDate, tempMin, tempMax, space, createdAt: Date.now()
-    });
+    closeModal();
+    if (currentChamber !== chamber) currentChamber = chamber;
+    renderAll();
+  } catch (err) {
+    alert(err.message || '提交失败，请检查网络或重试');
   }
-
-  saveBookings(bookings);
-  closeModal();
-  if (currentChamber !== chamber) currentChamber = chamber;
-  renderAll();
 }
 
-function handleDeleteConfirm() {
+async function handleDeleteConfirm() {
   if (!isAdmin()) {
     showPermissionDenied('您没有删除权限，请联系管理员');
     closeDeleteModal();
     return;
   }
   if (!deleteTargetId) return;
-  bookings = bookings.filter(b => b.id !== deleteTargetId);
-  saveBookings(bookings);
-  closeDeleteModal();
-  if (document.getElementById('day-detail-overlay').classList.contains('active') && selectedDateStr) {
-    openDayDetail(new Date(selectedDateStr));
+  try {
+    await removeBooking(deleteTargetId, ADMIN_PASSWORD);
+    closeDeleteModal();
+    if (document.getElementById('day-detail-overlay').classList.contains('active') && selectedDateStr) {
+      openDayDetail(new Date(selectedDateStr));
+    }
+    renderAll();
+  } catch (err) {
+    showPermissionDenied(err.message || '删除失败');
+    closeDeleteModal();
   }
-  renderAll();
 }
 
 // ===================== 导出 =====================
@@ -1063,5 +1102,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  renderAll();
+  syncIfEmpty().then(() => renderAll());
 });
