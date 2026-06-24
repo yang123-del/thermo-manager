@@ -1441,11 +1441,23 @@ input[type="time"].form-input::-webkit-calendar-picker-indicator {
     box-shadow: 0 0 12px rgba(255, 23, 68, 0.25);
 }
 
+.drawer-booking-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.drawer-booking-actions .drawer-booking-edit,
+.drawer-booking-actions .drawer-booking-delete {
+    position: static;
+}
+
 .drawer-booking-edit {
-    width: 28px;
+    width: 36px;
     height: 28px;
     border: 1px solid transparent;
-    border-radius: 50%;
+    border-radius: 14px;
     background: rgba(0, 180, 216, 0.06);
     color: var(--cold);
     cursor: pointer;
@@ -1455,13 +1467,14 @@ input[type="time"].form-input::-webkit-calendar-picker-indicator {
     transition: all 0.15s;
     padding: 0;
     flex-shrink: 0;
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 .drawer-booking-edit:hover {
     background: var(--cold);
     color: #fff;
-    transform: scale(1.1);
+    transform: scale(1.05);
     box-shadow: 0 0 12px rgba(0, 180, 216, 0.2);
 }
 

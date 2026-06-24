@@ -654,8 +654,11 @@ function openDayDetail(date) {
 
       const item = document.createElement('div');
       item.className = 'drawer-booking-item';
-      const deleteBtn = admin
-        ? `<button class="drawer-booking-delete" data-id="${b.id}" title="删除">×</button>`
+      const adminBtns = admin
+        ? `<div class="drawer-booking-actions">
+             <button class="drawer-booking-edit" data-id="${b.id}" title="编辑">编辑</button>
+             <button class="drawer-booking-delete" data-id="${b.id}" title="删除">×</button>
+           </div>`
         : '';
       const timeStr = (b.startTimeOfDay && b.endTimeOfDay)
         ? `${b.startTimeOfDay} - ${b.endTimeOfDay}`
@@ -673,7 +676,7 @@ function openDayDetail(date) {
             <span class="space-tag">${b.space || 1}U</span>
           </div>
         </div>
-        ${deleteBtn}
+        ${adminBtns}
       `;
       container.appendChild(item);
     });
@@ -684,6 +687,13 @@ function openDayDetail(date) {
           e.stopPropagation();
           deleteTargetId = btn.dataset.id;
           document.getElementById('delete-overlay').classList.add('active');
+        });
+      });
+      container.querySelectorAll('.drawer-booking-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeDayDetail();
+          openEditModal(btn.dataset.id);
         });
       });
     }
