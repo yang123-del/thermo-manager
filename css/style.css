@@ -816,11 +816,12 @@ body {
     font-family: 'JetBrains Mono', monospace;
 }
 
-.cell-tag-free   { background: #f1f5f9; color: var(--text-muted); }
-.cell-tag-shared { background: rgba(0,200,83,0.1); color: #008a29; }
-.cell-tag-full   { background: rgba(255,23,68,0.08); color: var(--danger); }
-.cell-tag-warm   { background: rgba(255,145,0,0.1); color: #e67800; }
-.cell-tag-hot    { background: rgba(255,23,68,0.1); color: var(--hot); }
+.cell-tag-used    { background: rgba(0, 180, 216, 0.08); color: #0077b6; }
+.cell-tag-free    { background: #f1f5f9; color: var(--text-muted); }
+.cell-tag-shared  { background: rgba(0,200,83,0.1); color: #008a29; }
+.cell-tag-full    { background: rgba(255,23,68,0.08); color: var(--danger); }
+.cell-tag-warm    { background: rgba(255,145,0,0.1); color: #e67800; }
+.cell-tag-hot     { background: rgba(255,23,68,0.1); color: var(--hot); }
 
 .cell-occupancy {
     font-size: 10px;
@@ -1086,6 +1087,18 @@ input[type="time"].form-input::-webkit-calendar-picker-indicator {
     padding: 8px 12px;
     border-radius: var(--radius-xs);
     border: 1px solid rgba(255, 23, 68, 0.1);
+}
+
+.form-input:disabled,
+.form-input-disabled {
+    background: #eef2f6 !important;
+    color: var(--text-secondary) !important;
+    cursor: not-allowed !important;
+    opacity: 0.8;
+}
+
+.form-input-disabled::placeholder {
+    color: transparent;
 }
 
 .form-actions {

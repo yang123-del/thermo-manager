@@ -552,8 +552,8 @@ function createCalendarCell(date, isOtherMonth) {
   // 底部标签
   let footerHtml = '';
   if (!isOtherMonth && dayBks.length > 0) {
-    let tagClass = 'cell-tag-free';
-    let tagText = '空闲';
+    let tagClass = 'cell-tag-used';
+    let tagText = '已被占用';
     if (spaceInfo.free === 0) { tagClass = 'cell-tag-full'; tagText = '已满'; }
     else if (hasRisk) { tagClass = 'cell-tag-hot'; tagText = '高风险'; }
     else if (spaceInfo.shared) { tagClass = 'cell-tag-shared'; tagText = '可共享'; }
@@ -623,7 +623,7 @@ function openDayDetail(date) {
     statusEl.textContent = '可共享';
     statusEl.className = 'drawer-status can-share';
   } else if (spaceInfo.used > 0) {
-    statusEl.textContent = '部分占用';
+    statusEl.textContent = '已被占用';
     statusEl.className = 'drawer-status partial';
   } else {
     statusEl.textContent = '空闲';
@@ -723,16 +723,64 @@ function openAddModal() {
   document.getElementById('form-chamber').value = currentChamber;
   document.getElementById('form-user').value = '';
   document.getElementById('form-content').value = '';
-  document.getElementById('form-start-date').value = selectedDateStr || formatDate(TODAY);
-  document.getElementById('form-end-date').value = selectedDateStr || formatDate(TODAY);
+
+  const startDate = selectedDateStr || formatDate(TODAY);
+  document.getElementById('form-start-date').value = startDate;
+  document.getElementById('form-end-date').value = startDate;
   document.getElementById('form-start-time').value = '09:00';
   document.getElementById('form-end-time').value = '18:00';
-  document.getElementById('form-temp-min').value = '';
-  document.getElementById('form-temp-max').value = '';
+
+  // 共享温度继承：查询该日期是否已有可共享的预约，如果有则锁定温度
+  const shareTemp = findShareableTemperature(currentChamber, startDate);
+  const tempMinEl = document.getElementById('form-temp-min');
+  const tempMaxEl = document.getElementById('form-temp-max');
+  const tempHintEl = document.getElementById('temp-hint');
+
+  if (shareTemp) {
+    tempMinEl.value = shareTemp.tempMin !== null ? shareTemp.tempMin : '';
+    tempMaxEl.value = shareTemp.tempMax !== null ? shareTemp.tempMax : '';
+    tempMinEl.disabled = true;
+    tempMaxEl.disabled = true;
+    tempMinEl.classList.add('form-input-disabled');
+    tempMaxEl.classList.add('form-input-disabled');
+    tempHintEl.textContent = `⚠️ 该日期已有预约，温度已锁定为 ${formatTempDisplay(shareTemp.tempMin, shareTemp.tempMax)}，共享使用只能使用此温度区间。`;
+    tempHintEl.className = 'form-hint warning';
+  } else {
+    tempMinEl.value = '';
+    tempMaxEl.value = '';
+    tempMinEl.disabled = false;
+    tempMaxEl.disabled = false;
+    tempMinEl.classList.remove('form-input-disabled');
+    tempMaxEl.classList.remove('form-input-disabled');
+    tempHintEl.textContent = '';
+    tempHintEl.className = 'form-hint';
+  }
+
   setSpaceValue(1);
   updateTempHint();
   updateTempPreview();
   document.getElementById('modal-overlay').classList.add('active');
+}
+
+/**
+ * 查找指定日期/温箱下可共享的温度区间（取当天第一个有效预约的温度）
+ */
+function findShareableTemperature(chamber, dateStr) {
+  const dayBks = bookings.filter(b =>
+    b.chamber === chamber && dateStr >= b.startDate && dateStr <= b.endDate
+  );
+  if (!dayBks.length) return null;
+  // 找一个温度范围明确的预约作为基准
+  const base = dayBks.find(b => b.tempMin !== null || b.tempMax !== null);
+  if (!base) return null;
+  return { tempMin: base.tempMin, tempMax: base.tempMax };
+}
+
+function formatTempDisplay(tempMin, tempMax) {
+  if (tempMin !== null && tempMax !== null) return `${tempMin}°C ~ ${tempMax}°C`;
+  if (tempMin !== null) return `≥ ${tempMin}°C`;
+  if (tempMax !== null) return `≤ ${tempMax}°C`;
+  return '未设置';
 }
 
 function openAddModalWithDate(dateStr) {
@@ -801,6 +849,11 @@ function updateTempHint() {
   const hintEl = document.getElementById('temp-hint');
   const min = minEl.value === '' ? null : Number(minEl.value);
   const max = maxEl.value === '' ? null : Number(maxEl.value);
+
+  // 如果处于锁定状态，保留共享提示，不再覆盖
+  if (minEl.disabled && maxEl.disabled && hintEl.textContent.includes('该日期已有预约')) {
+    return;
+  }
 
   hintEl.className = 'form-hint';
   hintEl.textContent = '';
