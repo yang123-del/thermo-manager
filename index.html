@@ -32,7 +32,7 @@
                         <div class="chamber-btn-glow"></div>
                         <span class="chamber-btn-icon">🧊</span>
                         <div class="chamber-btn-info">
-                            <div class="chamber-btn-name">西厂房小温箱</div>
+                            <div class="chamber-btn-name">进门左手边温箱</div>
                             <div class="chamber-btn-meta">3U 空间</div>
                         </div>
                         <div class="chamber-btn-indicator"></div>
@@ -50,7 +50,7 @@
                         <div class="chamber-btn-glow"></div>
                         <span class="chamber-btn-icon">🏢</span>
                         <div class="chamber-btn-info">
-                            <div class="chamber-btn-name">东厂房小温箱</div>
+                            <div class="chamber-btn-name">门对面温箱</div>
                             <div class="chamber-btn-meta">3U 空间</div>
                         </div>
                         <div class="chamber-btn-indicator"></div>
@@ -174,9 +174,9 @@
                     <div class="form-row">
                         <label class="form-label">选择温箱</label>
                         <select class="form-input" id="form-chamber">
-                            <option value="chamber-small">西厂房小温箱</option>
+                            <option value="chamber-small">进门左手边温箱</option>
                             <option value="chamber-large">大温箱</option>
-                            <option value="chamber-east">东厂房小温箱</option>
+                            <option value="chamber-east">门对面温箱</option>
                         </select>
                     </div>
                     <div class="form-row">
@@ -228,13 +228,11 @@
                         </div>
                     </div>
                     <div class="form-row">
-                        <label class="form-label">空间占用</label>
-                        <div class="space-selector" id="space-selector">
-                            <button type="button" class="space-option active" data-space="1">1U</button>
-                            <button type="button" class="space-option" data-space="2">2U</button>
-                            <button type="button" class="space-option" data-space="3">3U</button>
-                        </div>
-                        <input type="hidden" id="form-space" value="1">
+                        <label class="form-label">
+                            <input type="checkbox" id="form-shareable" checked>
+                            同温度区间共享温箱
+                        </label>
+                        <div class="form-hint" id="share-hint">勾选后，其他温度兼容的预约可以共享该温箱；取消勾选则独占整箱（3U）。</div>
                     </div>
                     <div class="form-hint" id="temp-hint"></div>
                     <div class="form-actions">

@@ -31,6 +31,7 @@ db.exec(`
     tempMin         INTEGER,
     tempMax         INTEGER,
     space           INTEGER DEFAULT 1,
+    shareable       INTEGER DEFAULT 1,
     createdAt       INTEGER DEFAULT (strftime('%s','now') * 1000)
   );
   CREATE INDEX IF NOT EXISTS idx_chamber    ON bookings(chamber);
@@ -38,16 +39,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_createdAt  ON bookings(createdAt);
 `);
 
-// 迁移：旧数据没有 startTimeOfDay / endTimeOfDay 字段时设为全天
+// 迁移：旧数据没有 startTimeOfDay / endTimeOfDay 字段时设为全天；没有 shareable 字段时默认可共享
 try {
   const colCheck = db.prepare(`PRAGMA table_info(bookings)`).all();
   const hasStartTime = colCheck.some(c => c.name === 'startTimeOfDay');
+  const hasEndTime   = colCheck.some(c => c.name === 'endTimeOfDay');
+  const hasShareable = colCheck.some(c => c.name === 'shareable');
   if (!hasStartTime) {
-    db.exec(`
-      ALTER TABLE bookings ADD COLUMN startTimeOfDay TEXT DEFAULT '00:00';
-      ALTER TABLE bookings ADD COLUMN endTimeOfDay   TEXT DEFAULT '23:45';
-    `);
-    console.log('[DB Migration] 已添加 startTimeOfDay / endTimeOfDay 字段');
+    db.exec(`ALTER TABLE bookings ADD COLUMN startTimeOfDay TEXT DEFAULT '00:00';`);
+    console.log('[DB Migration] 已添加 startTimeOfDay 字段');
+  }
+  if (!hasEndTime) {
+    db.exec(`ALTER TABLE bookings ADD COLUMN endTimeOfDay TEXT DEFAULT '23:45';`);
+    console.log('[DB Migration] 已添加 endTimeOfDay 字段');
+  }
+  if (!hasShareable) {
+    db.exec(`ALTER TABLE bookings ADD COLUMN shareable INTEGER DEFAULT 1;`);
+    console.log('[DB Migration] 已添加 shareable 字段');
   }
 } catch (e) {
   console.warn('[DB Migration] 字段可能已存在:', e.message);
@@ -240,7 +248,7 @@ app.get('/api/bookings/:chamber', (req, res) => {
 // 新增预约
 app.post('/api/bookings', (req, res) => {
   try {
-    const { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space = 1 } = req.body;
+    const { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, shareable = true } = req.body;
 
     // 校验
     if (!chamber || !user || !content || !startDate || !endDate) {
@@ -260,7 +268,8 @@ app.post('/api/bookings', (req, res) => {
       return res.status(400).json({ success: false, error: '时间格式必须为 HH:mm（24小时制）' });
     }
 
-    const spaceVal = Number(space) || 1;
+    const shareableVal = shareable === true || shareable === 1 || shareable === 'true' ? 1 : 0;
+    const spaceVal = shareableVal ? 1 : TOTAL_SPACE;
     const tempMin2 = (tempMin !== undefined && tempMin !== '') ? Number(tempMin) : null;
     const tempMax2 = (tempMax !== undefined && tempMax !== '') ? Number(tempMax) : null;
     if (tempMin2 !== null && tempMax2 !== null && tempMin2 > tempMax2) {
@@ -277,12 +286,12 @@ app.post('/api/bookings', (req, res) => {
     const createdAt = Date.now();
 
     const insert = db.prepare(`
-      INSERT INTO bookings (id, chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO bookings (id, chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space, shareable, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    insert.run(id, chamber, user, content, startDate, endDate, sTime, eTime, tempMin2, tempMax2, spaceVal, createdAt);
+    insert.run(id, chamber, user, content, startDate, endDate, sTime, eTime, tempMin2, tempMax2, spaceVal, shareableVal, createdAt);
 
-    res.json({ success: true, data: { id, chamber, user, content, startDate, endDate, startTimeOfDay: sTime, endTimeOfDay: eTime, tempMin: tempMin2, tempMax: tempMax2, space: spaceVal, createdAt } });
+    res.json({ success: true, data: { id, chamber, user, content, startDate, endDate, startTimeOfDay: sTime, endTimeOfDay: eTime, tempMin: tempMin2, tempMax: tempMax2, space: spaceVal, shareable: shareableVal === 1, createdAt } });
   } catch (e) {
     console.error('新增预约失败:', e);
     res.status(500).json({ success: false, error: '保存失败' });
@@ -293,7 +302,7 @@ app.post('/api/bookings', (req, res) => {
 app.put('/api/bookings/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space = 1 } = req.body;
+    const { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, shareable } = req.body;
 
     // 校验
     const exists = db.prepare('SELECT id FROM bookings WHERE id = ?').get(id);
@@ -315,7 +324,8 @@ app.put('/api/bookings/:id', (req, res) => {
       return res.status(400).json({ success: false, error: '时间格式必须为 HH:mm（24小时制）' });
     }
 
-    const spaceVal = Number(space) || 1;
+    const shareableVal = shareable === true || shareable === 1 || shareable === 'true' ? 1 : 0;
+    const spaceVal = shareableVal ? 1 : TOTAL_SPACE;
     const tempMin2 = (tempMin !== undefined && tempMin !== '') ? Number(tempMin) : null;
     const tempMax2 = (tempMax !== undefined && tempMax !== '') ? Number(tempMax) : null;
     if (tempMin2 !== null && tempMax2 !== null && tempMin2 > tempMax2) {
@@ -331,10 +341,10 @@ app.put('/api/bookings/:id', (req, res) => {
     const update = db.prepare(`
       UPDATE bookings
       SET chamber = ?, user = ?, content = ?, startDate = ?, endDate = ?,
-          startTimeOfDay = ?, endTimeOfDay = ?, tempMin = ?, tempMax = ?, space = ?
+          startTimeOfDay = ?, endTimeOfDay = ?, tempMin = ?, tempMax = ?, space = ?, shareable = ?
       WHERE id = ?
     `);
-    update.run(chamber, user, content, startDate, endDate, sTime, eTime, tempMin2, tempMax2, spaceVal, id);
+    update.run(chamber, user, content, startDate, endDate, sTime, eTime, tempMin2, tempMax2, spaceVal, shareableVal, id);
 
     res.json({ success: true });
   } catch (e) {

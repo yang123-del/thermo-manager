@@ -4,9 +4,9 @@
 
 // ===================== 常量与配置 =====================
 const CHAMBERS = {
-  'chamber-small': { name: '西厂房小温箱', icon: '🧊' },
+  'chamber-small': { name: '进门左手边温箱', icon: '🧊' },
   'chamber-large': { name: '大温箱', icon: '🏭' },
-  'chamber-east':  { name: '东厂房小温箱', icon: '🏢' }
+  'chamber-east':  { name: '门对面温箱', icon: '🏢' }
 };
 
 const API_BASE = ''; // 同域部署，无需前缀
@@ -232,7 +232,7 @@ async function migrateSeedData() {
       endDate: '2026-06-03',
       tempMin: 0,
       tempMax: 70,
-      space: 2
+      shareable: false
     },
     {
       chamber: 'chamber-small',
@@ -242,7 +242,7 @@ async function migrateSeedData() {
       endDate: '2026-06-07',
       tempMin: 0,
       tempMax: 40,
-      space: 1
+      shareable: true
     },
     {
       chamber: 'chamber-large',
@@ -252,7 +252,7 @@ async function migrateSeedData() {
       endDate: '2026-06-06',
       tempMin: -40,
       tempMax: 85,
-      space: 3
+      shareable: false
     },
     {
       chamber: 'chamber-east',
@@ -262,7 +262,7 @@ async function migrateSeedData() {
       endDate: '2026-06-10',
       tempMin: -20,
       tempMax: 60,
-      space: 1
+      shareable: true
     },
     {
       chamber: 'chamber-small',
@@ -272,7 +272,7 @@ async function migrateSeedData() {
       endDate: '2026-06-06',
       tempMin: 0,
       tempMax: 40,
-      space: 1
+      shareable: true
     }
   ];
   for (const payload of seedData) {
@@ -330,7 +330,8 @@ function checkConflict(chamber, startDate, endDate, excludeId, newSpace, newTemp
 function getSpaceInfo(chamber, date) {
   const bks = getBookingsForDate(chamber, date);
   const used = bks.reduce((s, b) => s + (Number(b.space) || 1), 0);
-  const shared = bks.length > 1 && canCoexist(bks);
+  // 可共享：只要还有空间（且温度兼容）即可预约共享，由用户提交时 shareable 决定标签
+  const shared = bks.length > 0 && used < TOTAL_SPACE && canCoexist(bks);
   return { used, free: Math.max(0, TOTAL_SPACE - used), total: TOTAL_SPACE, shared, count: bks.length };
 }
 
@@ -673,7 +674,7 @@ function openDayDetail(date) {
           <div class="drawer-booking-content">${b.content || '未填写测试内容'}</div>
           <div class="drawer-booking-meta">
             ${tempStr ? `<span class="temp-tag ${isRisk ? 'high-risk' : (b.tempMin < 0 ? 'cold' : (b.tempMax >= 50 ? 'hot' : ''))}">${tempStr}</span>` : ''}
-            <span class="space-tag">${b.space || 1}U</span>
+            <span class="space-tag">${b.shareable !== false ? '可共享' : '独享'}</span>
           </div>
         </div>
         ${adminBtns}
@@ -739,6 +740,7 @@ function openAddModal() {
   document.getElementById('form-end-date').value = startDate;
   document.getElementById('form-start-time').value = '09:00';
   document.getElementById('form-end-time').value = '18:00';
+  document.getElementById('form-shareable').checked = true;
 
   // 共享温度继承：查询该日期是否已有可共享的预约，如果有则锁定温度
   const shareTemp = findShareableTemperature(currentChamber, startDate);
@@ -766,7 +768,6 @@ function openAddModal() {
     tempHintEl.className = 'form-hint';
   }
 
-  setSpaceValue(1);
   updateTempHint();
   updateTempPreview();
   document.getElementById('modal-overlay').classList.add('active');
@@ -812,7 +813,7 @@ function openEditModal(id) {
   document.getElementById('form-end-time').value = b.endTimeOfDay || '23:45';
   document.getElementById('form-temp-min').value = b.tempMin !== null && b.tempMin !== undefined ? b.tempMin : '';
   document.getElementById('form-temp-max').value = b.tempMax !== null && b.tempMax !== undefined ? b.tempMax : '';
-  setSpaceValue(b.space || 1);
+  document.getElementById('form-shareable').checked = b.shareable !== false;
   updateTempHint();
   updateTempPreview();
   document.getElementById('modal-overlay').classList.add('active');
@@ -828,10 +829,8 @@ function closeDeleteModal() {
 }
 
 function setSpaceValue(n) {
-  document.getElementById('form-space').value = n;
-  document.querySelectorAll('.space-option').forEach(btn => {
-    btn.classList.toggle('active', Number(btn.dataset.space) === n);
-  });
+  const shareable = n === 1;
+  document.getElementById('form-shareable').checked = shareable;
 }
 
 function updateTempPreview() {
@@ -893,7 +892,8 @@ async function handleFormSubmit(e) {
   const endTimeOfDay = document.getElementById('form-end-time').value;
   const tempMinRaw = document.getElementById('form-temp-min').value;
   const tempMaxRaw = document.getElementById('form-temp-max').value;
-  const space = Number(document.getElementById('form-space').value) || 1;
+  const shareable = document.getElementById('form-shareable').checked;
+  const space = shareable ? 1 : TOTAL_SPACE;
 
   if (!user || !content || !startDate || !endDate) {
     alert('请填写所有必填项');
@@ -908,7 +908,7 @@ async function handleFormSubmit(e) {
     alert('最低温度不能高于最高温度'); return;
   }
 
-  const payload = { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, space };
+  const payload = { chamber, user, content, startDate, endDate, startTimeOfDay, endTimeOfDay, tempMin, tempMax, shareable, space };
 
   try {
     if (id) {
@@ -1148,9 +1148,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('form-temp-min').addEventListener('input', () => { updateTempHint(); updateTempPreview(); });
   document.getElementById('form-temp-max').addEventListener('input', () => { updateTempHint(); updateTempPreview(); });
 
-  // 空间选择器
-  document.querySelectorAll('.space-option').forEach(btn => {
-    btn.addEventListener('click', () => setSpaceValue(Number(btn.dataset.space)));
+  // 共享复选框
+  document.getElementById('form-shareable').addEventListener('change', () => {
+    const hint = document.getElementById('share-hint');
+    if (document.getElementById('form-shareable').checked) {
+      hint.textContent = '勾选后，其他温度兼容的预约可以共享该温箱；取消勾选则独占整箱（3U）。';
+      hint.className = 'form-hint';
+    } else {
+      hint.textContent = '⚠️ 取消共享将独占整个温箱（3U），当天其他预约将无法共存。';
+      hint.className = 'form-hint warning';
+    }
   });
 
   // 详情抽屉
