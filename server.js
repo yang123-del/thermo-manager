@@ -8,6 +8,7 @@ const express = require('express');
 const Database = require('better-sqlite3');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 // ===================== 常量 =====================
 const DB_PATH = path.join(__dirname, 'thermo.db');
@@ -17,7 +18,19 @@ const TOTAL_SPACE = 3;
 const TIME_STEP_MIN = 15; // 15分钟粒度
 
 // ===================== 数据库初始化 =====================
+// 确保数据库目录可写
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+  try {
+    fs.mkdirSync(dbDir, { recursive: true });
+    console.log(`[DB] 创建数据库目录: ${dbDir}`);
+  } catch (e) {
+    console.error(`[DB] 无法创建数据库目录 ${dbDir}:`, e.message);
+  }
+}
+
 const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS bookings (
     id              TEXT PRIMARY KEY,
@@ -209,7 +222,13 @@ const app = express();
 // 中间件
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '.')));
+
+// 静态资源：只暴露必要的文件，避免暴露 node_modules/.git 等
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // 请求日志（开发用途）
 app.use((req, res, next) => {
@@ -219,8 +238,8 @@ app.use((req, res, next) => {
 
 // ===================== API 路由 =====================
 
-// 健康检查
-app.get('/api/health', (req, res) => {
+// 健康检查（兼容 Railway V2 runtime）
+app.get(['/api/health', '/healthz'], (req, res) => {
   res.json({ success: true, message: '温箱管理系统后端运行正常', time: new Date().toISOString() });
 });
 
@@ -392,10 +411,11 @@ app.use((err, req, res, next) => {
 });
 
 // ===================== 启动 =====================
-app.listen(PORT, () => {
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
   console.log('\n=====================================');
   console.log('  🌡 温箱资源预约管理系统 - 后端服务');
-  console.log(`  🚀 运行地址: http://localhost:${PORT}`);
+  console.log(`  🚀 运行地址: http://${HOST}:${PORT}`);
   console.log(`  💾 数据库: ${DB_PATH}`);
   console.log('=====================================\n');
 });
