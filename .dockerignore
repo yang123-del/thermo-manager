@@ -1,0 +1,8 @@
+node_modules
+thermo.db
+thermo.db-wal
+thermo.db-shm
+.git
+.gitignore
+.env
+*.log

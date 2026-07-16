@@ -5,7 +5,6 @@
  */
 
 const express = require('express');
-const Database = require('better-sqlite3');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -14,8 +13,21 @@ const fs = require('fs');
 const DB_PATH = path.join(__dirname, 'thermo.db');
 const ADMIN_PASSWORD = 'Yingjian123'; // 管理员密钥
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 const TOTAL_SPACE = 3;
 const TIME_STEP_MIN = 15; // 15分钟粒度
+
+// ===================== 加载原生模块（带错误处理）=====================
+let Database;
+try {
+  Database = require('better-sqlite3');
+  console.log('[OK] better-sqlite3 加载成功');
+} catch (e) {
+  console.error('[FATAL] better-sqlite3 加载失败:', e.message);
+  console.error('[FATAL] 这通常是原生模块编译失败导致的。');
+  console.error('[FATAL] 请确保构建环境有 python3, make, g++ 等编译工具。');
+  process.exit(1);
+}
 
 // ===================== 数据库初始化 =====================
 // 确保数据库目录可写
@@ -411,7 +423,6 @@ app.use((err, req, res, next) => {
 });
 
 // ===================== 启动 =====================
-const HOST = process.env.HOST || '0.0.0.0';
 app.listen(PORT, HOST, () => {
   console.log('\n=====================================');
   console.log('  🌡 温箱资源预约管理系统 - 后端服务');
