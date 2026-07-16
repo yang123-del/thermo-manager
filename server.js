@@ -5,6 +5,7 @@
  */
 
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -12,6 +13,8 @@ const fs = require('fs');
 // ===================== 常量 =====================
 const DB_PATH = path.join(__dirname, 'thermo.db');
 const ADMIN_PASSWORD = 'Yingjian123'; // 管理员密钥
+// Railway 会设置 PORT 环境变量，但有时与路由端口不一致
+// 优先使用 PORT，同时确保在 3000 和 8080 上都能监听
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const TOTAL_SPACE = 3;
@@ -423,10 +426,19 @@ app.use((err, req, res, next) => {
 });
 
 // ===================== 启动 =====================
-app.listen(PORT, HOST, () => {
+// 同时监听 3000 和 8080，确保 Railway 任一端口都能访问
+const server1 = http.createServer(app);
+const server2 = http.createServer(app);
+
+server1.listen(3000, HOST, () => {
   console.log('\n=====================================');
   console.log('  🌡 温箱资源预约管理系统 - 后端服务');
-  console.log(`  🚀 运行地址: http://${HOST}:${PORT}`);
+  console.log(`   运行地址: http://${HOST}:3000`);
+  console.log(`  🚀 运行地址: http://${HOST}:8080`);
   console.log(`  💾 数据库: ${DB_PATH}`);
   console.log('=====================================\n');
+});
+
+server2.listen(8080, HOST, () => {
+  console.log('[OK] 端口 8080 监听就绪');
 });
